@@ -1,3 +1,4 @@
+from multiprocessing.connection import wait
 import pandas as pd
 import snscrape.modules.twitter as sntwitter
 from snscrape.base import ScraperException
@@ -12,12 +13,13 @@ from random import *
 ### GLOBAL DATA STORES ###
 
 
+# The time that we started pulling tweets. Used in oerformanc and rate calculation
 global startTime
 startTime = 0
-
+# Counter for the number of tweets we have scraped from Twitter so far
 global totalTweetsScraped
 totalTweetsScraped = 0
-# A counter for the total number of tweets we pull
+# A counter for the total number of tweets we have written to the output csv/s
 global totalTweetsWritten
 totalTweetsWritten = 0
 # How many tweets we expect to return based on the number of prompts and the number of tweets to pull for each prompt
@@ -29,38 +31,35 @@ workersSpawned = 0
 # How many scraperThreads are alive at any given time
 global workersAlive
 workersAlive = 0
-# How many scraperThreads are currently sleeping because they received a 429 return code
-global threadsSleeping
-threadsSleeping = 0
 # A handy tool that will help us later ;)
 threadLock = threading.Lock()
 # A lock exclusively for writing to the output file
 writeLock = threading.Lock()
 waitLock = threading.Condition()
+# Two threading events to keep track of our 429 status
+toManyRequests = threading.Event()
+stillToManyRequests = threading.Event()
 
 
+#TODO should be moved to JSON file
 ### CONFIGURATION VARIABLES ###
 
 
-# Minutes to delay between requests after getting a 429 error
-global startChance
-startChance = 5
 # The number of tweet we want to pull for each prompt and period
 global tweetNum
 tweetNum = 100
+# Desired scraping rate in tweets per second
+initialRate = 100
 # Start date in Y/M/D format
-startDate = [2020, 1, 1]
+startDate = [2022, 1, 1]
 # Words or phrases to search for
 searchPhrases = ["$SPY", "$VIX", "$QQQ"]
-# Number of time to wait five minutes and then retry the prompt after hitting 429 error
-retryLimit = 3
 
 
 ### FUNCTION CREATION ###
 
 
 def generateDateList(startYear, startMonth, startDay):
-    #startTime = time.time()
     # Define the starting date
     startDate = dt.datetime(startYear, startMonth, startDay)
 
@@ -76,15 +75,10 @@ def generateDateList(startYear, startMonth, startDay):
         dateList.append(startDate)
         startDate += delta
 
-    # Performance monitoring stuff
-    #endTime = time.time()
-    #elapsedTime = endTime - startTime
-    #print(f"Generated date list in: {elapsedTime}s")
     return dateList
 
 
 def generatePromptList(phrases, dateList):
-    #startTime = time.time()
     # Creating a prompt list to store all out twitter search terms
     promptList = []
 
@@ -100,70 +94,88 @@ def generatePromptList(phrases, dateList):
             # Append it to the list
             promptList.append(prompt)
 
-    # Performance monitoring stuff
-    #endTime = time.time()
-    #elapsedTime = endTime - startTime
-    #print(f"Generated prompt list in: {elapsedTime}s")
     return promptList
 
 
-#TODO make sure we decrease the number of workersAlive when returning
 def scrapeTweets(prompt):
-    global totalTweetsScraped, totalTweetsWritten
+    global toManyRequests, stillToManyRequests, totalTweetsScraped, totalTweetsWritten
+    
+    localTweetsScraped = 0
+    scrapedTweetsList = []
 
+    # Create a tweet iterator
+    scrapedTweets = sntwitter.TwitterSearchScraper(prompt).get_items()
 
-    tweetCount = 0
-    tweetsList = []
-
-    while True:
-        # Create a tweet generator
-        #TODO use previous version of program to test to see if this needs to be in the while loop
-        scrapedTweets = sntwitter.TwitterSearchScraper(prompt).get_items()
+    while localTweetsScraped <= tweetNum:
+        #Wait until the scraperThread manager tells the scraperThread to go
+        with waitLock:
+            waitLock.wait()
         
+        # Attempt to scrape the next tweet from Twitter and handle any exception that may occur
         try:
-            # Iterate through that generator until we reach the number of tweets we need
-            for tweet in scrapedTweets:
-                #Wait until the scraperThread manager tells the scraperThread to go
-                with waitLock:
-                    waitLock.wait()
-                    
-                #Append the tweet we scraped to our running list of them
-                tweetsList.append([tweet.date, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
-                #Increment our tweet count so we can see if we return or not later
-                tweetCount += 1
-                # Update the counter for how many tweets we have pulled from Twitter and stored in memory
-                with threadLock:
-                    totalTweetsScraped += 1
+            # Grab the next tweet from the iterator
+            # This can throw a ScraperException for a few reasons
+            tweet = next(scrapedTweets)
 
-                # If we hit ten tweets then flush the list to our output file
-                if len(tweetsList) >= 10:
-                    # Turn the tweet list into a data frame
-                    tweets_df = pd.DataFrame(tweetsList, columns=['Datetime', 'Text', 'Username'])
-
-                    #TODO Possibly surround this in a try catch in case the write fails for some reason
-                    # Insert the data frame into out csv file
-                    with writeLock:
-                        tweets_df.to_csv('tweets.csv', mode='a', index=False, header=False)
-
-                    # Record the number of tweets we grabbed
-                    with threadLock:
-                        totalTweetsWritten += len(tweetsList)
-                    
-                    # Flush the tweets out of the tweet list
-                    tweetsList = []
-
-                    # Check if we hae collected the specified number of tweets from this prompt and if so then return
-                    if tweetCount >= tweetNum:
-                        return
-
+            #Append the tweet we scraped to our running list of them
+            scrapedTweetsList.append([tweet.date, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
+            # Clear the 429 flag since we we're able to get a request through
+            toManyRequests.clear()
+            #Increment our tweet count so we can see if we return or not later
+            localTweetsScraped += 1
+            # Update the counter for how many tweets we have pulled from Twitter and stored in memory
+            with threadLock:
+                totalTweetsScraped += 1
+        
         # If a ScraperException is raised.
         #TODO Make it notify the manager scraperThread that a 429 was received and exits for any other scraper exception
         except ScraperException as e:
-            pass
+            # If this thread was released to see if the 429 error is gone then report back if it is or not
+            if toManyRequests.is_set():
+                stillToManyRequests.set()
+            print(e)
+            return
+            #continue
 
-def scraperManager():
+        # If we hit ten tweets then flush the list to our output file
+        if len(scrapedTweetsList) >= 10:
+            # Turn the tweet list into a data frame
+            tweets_df = pd.DataFrame(scrapedTweetsList, columns=['Datetime', 'Text', 'Username'])
+
+            #TODO Possibly surround this in a try catch in case the write fails for some reason
+            # Insert the data frame into out csv file
+            with writeLock:
+                tweets_df.to_csv('tweets.csv', mode='a', index=False, header=False)
+
+            # Record the number of tweets we grabbed
+            with threadLock:
+                totalTweetsWritten += len(scrapedTweetsList)
+            
+            # Flush the tweets out of the tweet list
+            scrapedTweetsList = []
+
+    return
+
+
+def scraperManager(initialRate):
+    rate = initialRate
+
     while workersAlive > 0:
-        pass
+        # Fall into this loop if we recive a 429 error
+        while toManyRequests.is_set():
+            with waitLock:
+                waitLock.notify()
+            if stillToManyRequests.is_set():
+                # Clear the flag and wait for five minutes, decrease the rate
+                stillToManyRequests.clear()
+                time.sleep(60 * 5)
+                rate -= 10
+        
+        # Let the threads go one by one at a controlled rate
+        interval = 1 / rate
+        time.sleep(interval)
+        with waitLock:
+            waitLock.notify()
 
     return
 
@@ -175,8 +187,8 @@ def displayManager():
     # Check if there are any scraperThreads left to monitor
     while workersAlive > 0:
         # Calculate our display variables
-        elapsedTime = time.time()-startTime
-        tweetScrappingRate = totalTweetsScraped/elapsedTime
+        elapsedTime = time.time() - startTime
+        tweetScrappingRate = totalTweetsScraped / elapsedTime
 
         with threadLock:
             # Clear the screen to make room for the UI
@@ -216,8 +228,9 @@ def displayManager():
 startTime = time.time()
 
 #Redirect stderr to null you can uncomment this if you want but it's a headache to look at
-nullTerm = open(os.devnull, 'w')
-sys.stderr = nullTerm
+#TODO reenable these lines to redirect stderror and then hopefully to a log file insted of null term
+#nullTerm = open(os.devnull, 'w')
+#sys.stderr = nullTerm
 
 dateList = generateDateList(startDate[0], startDate[1], startDate[2])
 promptList = generatePromptList(searchPhrases, dateList)
@@ -233,19 +246,26 @@ for prompt in promptList:
     scraperThread = threading.Thread(target=scrapeTweets, args=(prompt,))
     scraperThreads.append(scraperThread)
     scraperThread.start()
-    # Update the initial worker counter
+    # Increment our worker number trackers
+    workersAlive += 1
     workersSpawned += 1
 
+# Create and start the thread that will be cordinationg and directing all of the scraper threads
+managerThread = threading.Thread(target=scraperManager, args=(initialRate,))
+managerThread.start()
 # Create and start the thread that will be running the data display
-displayThread = threading.Thread(target=displayManager)
-displayThread.start()
+#TODO reenable these to turn the data display back on
+#displayThread = threading.Thread(target=displayManager)
+#displayThread.start()
 
-# Waiting for all scraperThreads to finish before continuing
+# Join all threads that were created
 for scraperThread in scraperThreads:
     scraperThread.join()
+    workersAlive -= 1
 
-# Wait for the display thread to close up shop
-displayThread.join()
+managerThread.join()
+#TODO Renable
+#displayThread.join()
 
 # Performance monitoring stuff
 endTime = time.time()

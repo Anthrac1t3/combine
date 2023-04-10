@@ -24,8 +24,11 @@ totalTweetsWritten = 0
 global tweetsExpected
 tweetsExpected = 0
 # How many scraperThreads(prompts) that we spawned
-global threadsSpawned
-threadsSpawned = 0
+global workersSpawned
+workersSpawned = 0
+# How many scraperThreads are alive at any given time
+global workersAlive
+workersAlive = 0
 # How many scraperThreads are currently sleeping because they received a 429 return code
 global threadsSleeping
 threadsSleeping = 0
@@ -104,18 +107,20 @@ def generatePromptList(phrases, dateList):
     return promptList
 
 
+#TODO make sure we decrease the number of workersAlive when returning
 def scrapeTweets(prompt):
-    global totalTweetsScraped, tweetNum, totalTweetsWritten, threadsSleeping, startChance
+    global totalTweetsScraped, totalTweetsWritten
 
 
     tweetCount = 0
     tweetsList = []
 
     while True:
+        # Create a tweet generator
+        #TODO use previous version of program to test to see if this needs to be in the while loop
+        scrapedTweets = sntwitter.TwitterSearchScraper(prompt).get_items()
+        
         try:
-            # Create a tweet generator
-            scrapedTweets = sntwitter.TwitterSearchScraper(prompt).get_items()
-
             # Iterate through that generator until we reach the number of tweets we need
             for tweet in scrapedTweets:
                 #Wait until the scraperThread manager tells the scraperThread to go
@@ -124,34 +129,32 @@ def scrapeTweets(prompt):
                     
                 #Append the tweet we scraped to our running list of them
                 tweetsList.append([tweet.date, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
-                
                 #Increment our tweet count so we can see if we return or not later
                 tweetCount += 1
-
-                #Adjust the slowdown factor if the request succeeded
+                # Update the counter for how many tweets we have pulled from Twitter and stored in memory
                 with threadLock:
                     totalTweetsScraped += 1
-                    if startChance > 1:
-                        startChance -= 1
 
-                    # If we hit ten tweets then flush the list to our output file
-                    if len(tweetsList) >= 10:
-                        # Turn the tweet list into a data frame
-                        tweets_df = pd.DataFrame(tweetsList, columns=['Datetime', 'Text', 'Username'])
+                # If we hit ten tweets then flush the list to our output file
+                if len(tweetsList) >= 10:
+                    # Turn the tweet list into a data frame
+                    tweets_df = pd.DataFrame(tweetsList, columns=['Datetime', 'Text', 'Username'])
 
-                        #TODO Possibly surrond this in a try catch in case the write fails for some reason
-                        # Insert the data frame into out csv file
+                    #TODO Possibly surround this in a try catch in case the write fails for some reason
+                    # Insert the data frame into out csv file
+                    with writeLock:
                         tweets_df.to_csv('tweets.csv', mode='a', index=False, header=False)
 
-                        # Record the number of tweets we grabbed
+                    # Record the number of tweets we grabbed
+                    with threadLock:
                         totalTweetsWritten += len(tweetsList)
-                        
-                        # Flush the tweets out of the tweet list
-                        tweetsList = []
+                    
+                    # Flush the tweets out of the tweet list
+                    tweetsList = []
 
-                        # Check if we hae collected the specified number of tweets from this prompt and if so then return
-                        if tweetCount >= tweetNum:
-                            return
+                    # Check if we hae collected the specified number of tweets from this prompt and if so then return
+                    if tweetCount >= tweetNum:
+                        return
 
         # If a ScraperException is raised.
         #TODO Make it notify the manager scraperThread that a 429 was received and exits for any other scraper exception
@@ -159,60 +162,45 @@ def scrapeTweets(prompt):
             pass
 
 def scraperManager():
-    while threading.active_count() > 2:
+    while workersAlive > 0:
         pass
 
     return
 
+
 #TODO Have there be no calculations in the scraperThread lock make it so all we do is copy the current values and release
 def displayManager():
-    #TODO We actually dont need a global tag or a thread lock just to read the values so we can drop both of those
-    global startTime, tweetNum, totalTweetsScraped, totalTweetsWritten, threadsAlive, threadsSpawned
-
-    # Make copies of all the read-only, static values
-    with threadLock:
-        startTimecp = startTime
-        tweetNumcp = tweetNum
-        threadsSpawnedcp = threadsSpawned
-        tweetsExpected = tweetNumcp * threadsSpawnedcp
+    tweetsExpected = tweetNum * workersSpawned
 
     # Check if there are any scraperThreads left to monitor
-    while threading.active_count() > 1:
-        # Make copies of all the read-only, updateable variables
-        with threadLock:
-            totalTweetsScrapedcp = totalTweetsScraped
-            totalTweetsWrittencp = totalTweetsScraped
-        
+    while workersAlive > 0:
         # Calculate our display variables
-        elapsedTime = time.time()-startTimecp
-
+        elapsedTime = time.time()-startTime
+        tweetScrappingRate = totalTweetsScraped/elapsedTime
 
         with threadLock:
             # Clear the screen to make room for the UI
             os.system('cls' if os.name == 'nt' else 'clear')
 
             #Print status updates
-            print(f"Alive Threads: {threadsAlive}/{threadsSpawned}")
+            print(f"Alive Threads: {workersAlive}/{workersSpawned}")
             
             print(f"Tweets scraped: {totalTweetsScraped}")
             
             print(f"Tweets written out of tweets expected: {totalTweetsWritten}/{tweetsExpected}")
             
-            if threadsAlive == 0:
+            if workersAlive == 0:
                 print(f"Average scraperThread completion: 100%")
             else:
-                averageBlockCompletion = totalTweetsScraped/threadsAlive/tweetNum*100
+                averageBlockCompletion = totalTweetsScraped/workersAlive/tweetNum*100
                 print(f"Average block completion: {averageBlockCompletion}%")
-            
-            
-            tweetScrappingRate = totalTweetsScraped/elapsedTime
             
             if tweetScrappingRate == 0:
                 print(f"Estimated time till next block write: Inf!")
-            elif threadsAlive == 0:
+            elif workersAlive == 0:
                 print(f"Estimated time till next block write: N/A")
             else:
-                print(f"Estimated time till done: {(tweetNum-(totalTweetsScraped/threadsAlive))/tweetScrappingRate*threadsAlive/60}m")
+                print(f"Estimated time till done: {(tweetNum-(totalTweetsScraped/workersAlive))/tweetScrappingRate*workersAlive/60}m")
             
             print(f"Current tweet scraping rate: {tweetScrappingRate}t/s")
 
@@ -245,10 +233,10 @@ for prompt in promptList:
     scraperThread = threading.Thread(target=scrapeTweets, args=(prompt,))
     scraperThreads.append(scraperThread)
     scraperThread.start()
-    with threadLock:
-        threadsSpawned += 1
+    # Update the initial worker counter
+    workersSpawned += 1
 
-# Create and start the thread that will be running the UI
+# Create and start the thread that will be running the data display
 displayThread = threading.Thread(target=displayManager)
 displayThread.start()
 
@@ -256,7 +244,7 @@ displayThread.start()
 for scraperThread in scraperThreads:
     scraperThread.join()
 
-# Wait for the UI scraperThread to close up gracefully
+# Wait for the display thread to close up shop
 displayThread.join()
 
 # Performance monitoring stuff

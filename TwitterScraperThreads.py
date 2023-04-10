@@ -154,7 +154,7 @@ def scrapeTweets(prompt):
                             return
 
         # If a ScraperException is raised.
-        #TODO Make it notify the manager scraperThread that a 429 was recived and exits for any other scraper exception
+        #TODO Make it notify the manager scraperThread that a 429 was received and exits for any other scraper exception
         except ScraperException as e:
             pass
 
@@ -166,6 +166,7 @@ def scraperManager():
 
 #TODO Have there be no calculations in the scraperThread lock make it so all we do is copy the current values and release
 def displayManager():
+    #TODO We actually dont need a global tag or a thread lock just to read the values so we can drop both of those
     global startTime, tweetNum, totalTweetsScraped, totalTweetsWritten, threadsAlive, threadsSpawned
 
     # Make copies of all the read-only, static values

@@ -23,13 +23,10 @@ totalTweetsWritten = 0
 # How many tweets we expect to return based on the number of prompts and the number of tweets to pull for each prompt
 global tweetsExpected
 tweetsExpected = 0
-# How many threads(prompts) that we spawned
+# How many scraperThreads(prompts) that we spawned
 global threadsSpawned
 threadsSpawned = 0
-# How many threads have not been .join()ed at the moment
-global threadsAlive
-threadsAlive = 0
-# How many threads are currently sleeping because they received a 429 return code
+# How many scraperThreads are currently sleeping because they received a 429 return code
 global threadsSleeping
 threadsSleeping = 0
 # A handy tool that will help us later ;)
@@ -110,8 +107,7 @@ def generatePromptList(phrases, dateList):
 def scrapeTweets(prompt):
     global totalTweetsScraped, tweetNum, totalTweetsWritten, threadsSleeping, startChance
 
-    # Sleep for a random number of seconds at the beginning in order to stagger the start of all the threads
-    time.sleep(randint(0, 60))
+
     tweetCount = 0
     tweetsList = []
 
@@ -122,7 +118,7 @@ def scrapeTweets(prompt):
 
             # Iterate through that generator until we reach the number of tweets we need
             for tweet in scrapedTweets:
-                #Wait until the thread manager tells the thread to go
+                #Wait until the scraperThread manager tells the scraperThread to go
                 with waitLock:
                     waitLock.wait()
                     
@@ -143,6 +139,7 @@ def scrapeTweets(prompt):
                         # Turn the tweet list into a data frame
                         tweets_df = pd.DataFrame(tweetsList, columns=['Datetime', 'Text', 'Username'])
 
+                        #TODO Possibly surrond this in a try catch in case the write fails for some reason
                         # Insert the data frame into out csv file
                         tweets_df.to_csv('tweets.csv', mode='a', index=False, header=False)
 
@@ -157,7 +154,7 @@ def scrapeTweets(prompt):
                             return
 
         # If a ScraperException is raised.
-        #TODO Make it notify the manager thread that a 429 was recived
+        #TODO Make it notify the manager scraperThread that a 429 was recived and exits for any other scraper exception
         except ScraperException as e:
             pass
 
@@ -167,7 +164,7 @@ def scraperManager():
 
     return
 
-#TODO Have there be no calculations in the thread lock make it so all we do is copy the current values and release
+#TODO Have there be no calculations in the scraperThread lock make it so all we do is copy the current values and release
 def displayManager():
     global startTime, tweetNum, totalTweetsScraped, totalTweetsWritten, threadsAlive, threadsSpawned
 
@@ -178,7 +175,7 @@ def displayManager():
         threadsSpawnedcp = threadsSpawned
         tweetsExpected = tweetNumcp * threadsSpawnedcp
 
-    # Check if there are any threads left to monitor
+    # Check if there are any scraperThreads left to monitor
     while threading.active_count() > 1:
         # Make copies of all the read-only, updateable variables
         with threadLock:
@@ -201,7 +198,7 @@ def displayManager():
             print(f"Tweets written out of tweets expected: {totalTweetsWritten}/{tweetsExpected}")
             
             if threadsAlive == 0:
-                print(f"Average thread completion: 100%")
+                print(f"Average scraperThread completion: 100%")
             else:
                 averageBlockCompletion = totalTweetsScraped/threadsAlive/tweetNum*100
                 print(f"Average block completion: {averageBlockCompletion}%")
@@ -226,6 +223,9 @@ def displayManager():
 ### MAIN BODY ###
 
 
+# Start the performance timer
+startTime = time.time()
+
 #Redirect stderr to null you can uncomment this if you want but it's a headache to look at
 nullTerm = open(os.devnull, 'w')
 sys.stderr = nullTerm
@@ -233,37 +233,30 @@ sys.stderr = nullTerm
 dateList = generateDateList(startDate[0], startDate[1], startDate[2])
 promptList = generatePromptList(searchPhrases, dateList)
 
-#print(f"Number of prompts:{len(promptList)} Expected number of tweets:{len(promptList) * tweetNum}")
-
 tweetsExpected = len(promptList) * tweetNum
-threadsSpawned = len(promptList)
 
-# Creating and starting threads for each prompt
-startTime = time.time()
-#startTimegl = startTime
-
-# Create a handy list for all the other threads
-threads = []
-# Now spawn a thread for every prompt in the prompt list and start it
+# Creating and starting scraperThreads for each prompt
+# Create a handy list for all the other scraperThreads
+scraperThreads = []
+# Now spawn a scraperThread for every prompt in the prompt list and start it
+#TODO this might need to be in a try catch block to catch some kind of malformed query or something
 for prompt in promptList:
+    scraperThread = threading.Thread(target=scrapeTweets, args=(prompt,))
+    scraperThreads.append(scraperThread)
+    scraperThread.start()
     with threadLock:
-        threadsAlive += 1
-    thread = threading.Thread(target=scrapeTweets, args=(prompt,))
-    threads.append(thread)
-    thread.start()
+        threadsSpawned += 1
 
-# Create and start the thread tha will be running the UI
-uiThread = threading.Thread(target=displayManager)
-uiThread.start()
+# Create and start the thread that will be running the UI
+displayThread = threading.Thread(target=displayManager)
+displayThread.start()
 
-# Waiting for all threads to finish before continuing
-for thread in threads:
-    thread.join()
-    with threadLock:
-        threadsAlive -= 1
+# Waiting for all scraperThreads to finish before continuing
+for scraperThread in scraperThreads:
+    scraperThread.join()
 
-# Wait for the UI thread to close up gracefully
-uiThread.join()
+# Wait for the UI scraperThread to close up gracefully
+displayThread.join()
 
 # Performance monitoring stuff
 endTime = time.time()

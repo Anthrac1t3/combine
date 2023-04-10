@@ -34,6 +34,9 @@ global threadsSleeping
 threadsSleeping = 0
 # A handy tool that will help us later ;)
 threadLock = threading.Lock()
+# A lock exclusively for writing to the output file
+writeLock = threading.Lock()
+waitLock = threading.Condition()
 
 
 ### CONFIGURATION VARIABLES ###
@@ -44,11 +47,11 @@ global startChance
 startChance = 5
 # The number of tweet we want to pull for each prompt and period
 global tweetNum
-tweetNum = 1000
+tweetNum = 100
 # Start date in Y/M/D format
-startDate = [2013, 1, 1]
+startDate = [2020, 1, 1]
 # Words or phrases to search for
-searchPhrases = ["food"]
+searchPhrases = ["$SPY", "$VIX", "$QQQ"]
 # Number of time to wait five minutes and then retry the prompt after hitting 429 error
 retryLimit = 3
 
@@ -119,6 +122,10 @@ def scrapeTweets(prompt):
 
             # Iterate through that generator until we reach the number of tweets we need
             for tweet in scrapedTweets:
+                #Wait until the thread manager tells the thread to go
+                with waitLock:
+                    waitLock.wait()
+                    
                 #Append the tweet we scraped to our running list of them
                 tweetsList.append([tweet.date, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
                 
@@ -149,54 +156,45 @@ def scrapeTweets(prompt):
                         if tweetCount >= tweetNum:
                             return
 
-        # If a ScraperException is raised, sleep for a while and retry
+        # If a ScraperException is raised.
+        #TODO Make it notify the manager thread that a 429 was recived
         except ScraperException as e:
-            # Grab thread lock and update global values
-            with threadLock:
-                # Increment global slowdown factor
-                startChance += 5
-                # Calculate how long we should sleep in a random way so that the requests get spread out evenly
-                threadsSleeping += 1
-                startChanceTracker = startChance
-            # Roll to see if we are going to sleep or try and run
-            if randint(1, startChanceTracker) != 1:
-                time.sleep(60)
-                # Check to see if the startChance has been increased by a request being able to make it through
-                with threadLock:
-                    startChanceTracker = startChance
+            pass
 
-            # Grab thread lock and reset global values
-            with threadLock:
-                threadsSleeping -= 1
+def scraperManager():
+    while threading.active_count() > 2:
+        pass
 
+    return
 
-def runUI():
-    global startTime, tweetNum, totalTweetsScraped, totalTweetsWritten, tweetsExpected, threadsAlive, threadsSpawned, threadsSleeping, startChance
+#TODO Have there be no calculations in the thread lock make it so all we do is copy the current values and release
+def displayManager():
+    global startTime, tweetNum, totalTweetsScraped, totalTweetsWritten, threadsAlive, threadsSpawned
 
-    keepRunning = True
+    # Make copies of all the read-only, static values
+    with threadLock:
+        startTimecp = startTime
+        tweetNumcp = tweetNum
+        threadsSpawnedcp = threadsSpawned
+        tweetsExpected = tweetNumcp * threadsSpawnedcp
 
-    while True:
-        # Grab the thread lock and check if there are any threads left to monitor
+    # Check if there are any threads left to monitor
+    while threading.active_count() > 1:
+        # Make copies of all the read-only, updateable variables
         with threadLock:
-            # If there are not, then return
-            if threadsAlive == 0:
-                keepRunning = False
+            totalTweetsScrapedcp = totalTweetsScraped
+            totalTweetsWrittencp = totalTweetsScraped
         
+        # Calculate our display variables
+        elapsedTime = time.time()-startTimecp
+
+
         with threadLock:
             # Clear the screen to make room for the UI
             os.system('cls' if os.name == 'nt' else 'clear')
 
             #Print status updates
             print(f"Alive Threads: {threadsAlive}/{threadsSpawned}")
-            
-            print(f"Sleeping Threads: {threadsSleeping}/{threadsAlive}")
-            
-            print(f"Global Start Factor: {startChance}")
-            
-            if threadsSleeping == 0:
-                print("Chance to start a thread per minute: No Threads Sleeping!")
-            else: 
-                print(f"Chance to start a thread per minute: {threadsSleeping/startChance*100}%")
             
             print(f"Tweets scraped: {totalTweetsScraped}")
             
@@ -208,7 +206,7 @@ def runUI():
                 averageBlockCompletion = totalTweetsScraped/threadsAlive/tweetNum*100
                 print(f"Average block completion: {averageBlockCompletion}%")
             
-            elapsedTime = time.time()-startTime
+            
             tweetScrappingRate = totalTweetsScraped/elapsedTime
             
             if tweetScrappingRate == 0:
@@ -220,10 +218,9 @@ def runUI():
             
             print(f"Current tweet scraping rate: {tweetScrappingRate}t/s")
 
-        if not keepRunning:
-            return
-
         time.sleep(1)
+
+    return
 
 
 ### MAIN BODY ###
@@ -256,7 +253,7 @@ for prompt in promptList:
     thread.start()
 
 # Create and start the thread tha will be running the UI
-uiThread = threading.Thread(target=runUI)
+uiThread = threading.Thread(target=displayManager)
 uiThread.start()
 
 # Waiting for all threads to finish before continuing

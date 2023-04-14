@@ -355,7 +355,7 @@ def scraperManager():
             time.sleep(5)
             # Wait for that thread to finish
             if workersWaiting != workersAlive:
-                scraperManagerStatus = "I'm waiting for threads to finish up"
+                scraperManagerStatus = "I'm waiting for the thread to finish up"
                 while workersWaiting != workersAlive:
                     time.sleep(1)
 
@@ -365,8 +365,8 @@ def scraperManager():
                 scraperManagerStatus = "I'm waiting for 5m"
                 # Clear the flag and wait for five minutes, decrease the rate
                 time.sleep(60 * 5)
-                if desiredRate > 75:
-                    desiredRate -= 1
+                #if desiredRate > 75:
+                #    desiredRate -= 1
             else:
                 setToManyRequests(False)
 

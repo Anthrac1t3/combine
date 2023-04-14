@@ -1,11 +1,11 @@
 {
 	"desiredRate": 80,
 	"tweetNum": 100,
-	"startDate": [2023, 1, 1],
-	"_searchPhrases": ["vacation", "outing", "travel", "alone", "loneliness", "depressed", "stressed", "happy", "sad", "joyful", "blissful", "food", "snack", "board"],
-	"__searchPhrases": ["depressed", "stressed", "happy", "sad", "joyful"],
-	"___searchPhrases": ["blissful", "food", "snack", "board"],
-	"searchPhrases": ["blissful"],
+	"startDate": [2013, 1, 1],
+	"searchPhrases": ["vacation", "depressed", "stressed", "blissful"],
+	"_searchPhrases": ["outing", "travel", "alone", "loneliness"],
+	"__searchPhrases": ["happy", "sad", "joyful"],
+	"___searchPhrases": ["food", "snack", "board"],
 
 	"subredditList":[
 		"food", "FoodPorn", "Cooking", 

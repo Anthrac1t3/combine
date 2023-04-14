@@ -47,11 +47,11 @@ scraperManagerStatus = "Nothing"
 
 # Boolean to keep track of if we need to stop running any threads
 global threadsStop
-threadsStop = False
+threadsStop = True
 
 # Two booleans to keep track of our 429 status
 global toManyRequests
-toManyRequests = False
+toManyRequests = True
 global stillToManyRequests
 stillToManyRequests = False
 
@@ -290,7 +290,7 @@ def scrapeTweets(prompt):
 def rateAdjuster():
     global setRate
 
-    setRate = desiredRate
+    setRate = 5
 
     while workersAlive > 0:
         while threadsStop:
@@ -304,7 +304,7 @@ def rateAdjuster():
         elif tweetScrappingRate >= (desiredRate + 1) and setRate > 1:
             setRate -= 1
 
-    time.sleep(1)
+    time.sleep(5)
 
     return
 
@@ -354,6 +354,7 @@ def scraperManager():
             time.sleep(5)
             # Wait for that thread to finish
             if workersWaiting != workersAlive:
+                scraperManagerStatus = "I'm waiting for threads to finish up"
                 while workersWaiting != workersAlive:
                     time.sleep(1)
 

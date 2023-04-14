@@ -323,7 +323,7 @@ def rateAdjuster():
         elapsedTime = time.time() - startTime
         tweetScrappingRate = totalTweetsScraped / elapsedTime
 
-        if tweetScrappingRate <= (desiredRate - 1) and tweetScrappingRate > 0 and setRate < (desiredRate + 15):
+        if tweetScrappingRate <= (desiredRate - 1) and tweetScrappingRate > 0 and setRate < (desiredRate + 25):
             setRate += 1
         elif tweetScrappingRate >= (desiredRate + 1) and setRate > 1:
             setRate -= 1

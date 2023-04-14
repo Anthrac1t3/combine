@@ -1,5 +1,5 @@
 {
-	"desiredRate": 95,
+	"desiredRate": 80,
 	"tweetNum": 100,
 	"startDate": [2023, 1, 1],
 	"_searchPhrases": ["vacation", "outing", "travel", "alone", "loneliness", "depressed", "stressed", "happy", "sad", "joyful", "blissful", "food", "snack", "board"],

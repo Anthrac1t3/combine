@@ -367,7 +367,7 @@ def scraperManager():
                 scraperManagerStatus = "I'm waiting for 5m"
                 # Clear the flag and wait for five minutes, decrease the rate
                 time.sleep(60 * 5)
-                if desiredRate > 70:
+                if desiredRate > 75:
                     desiredRate -= 1
             else:
                 setToManyRequests(False)

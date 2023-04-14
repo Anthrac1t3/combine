@@ -1,4 +1,5 @@
 import contextlib
+import csv
 import datetime as dt
 import json
 import os
@@ -149,9 +150,9 @@ def writeTweetListToFile(outputFilePath, tweetList):
     global totalTweetsWritten
 
     with writeLock:
-        with open(outputFilePath, 'a') as file:
+        with open(outputFilePath, 'a', encoding='UTF8', newline='') as file:
             for tweet in tweetList:
-                file.write(f"{tweet[0]},{tweet[1]},{tweet[2]},{tweet[3]}")
+                file.write(tweet)
 
     # Turn the tweet list into a data frame
     #tweetsDF = pd.DataFrame(tweetList, columns=['time_stamp', 'tweet_id', 'content', 'author'])

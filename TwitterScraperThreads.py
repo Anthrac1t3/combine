@@ -8,7 +8,7 @@ import threading
 import time
 from random import *
 
-import pandas as pd
+#import pandas as pd
 import snscrape.modules.twitter as sntwitter
 from snscrape.base import ScraperException
 
@@ -148,12 +148,17 @@ def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S_{fname}'):
 def writeTweetListToFile(outputFilePath, tweetList):
     global totalTweetsWritten
 
+    with writeLock:
+        with open(outputFilePath, 'a') as file:
+            for tweet in tweetList:
+                file.write(f"{tweet[0]},{tweet[1]},{tweet[2]},{tweet[3]}")
+
     # Turn the tweet list into a data frame
-    tweetsDF = pd.DataFrame(tweetList, columns=['time_stamp', 'tweet_id', 'content', 'author'])
+    #tweetsDF = pd.DataFrame(tweetList, columns=['time_stamp', 'tweet_id', 'content', 'author'])
     
     # Insert the data frame into out csv file
-    with writeLock:
-        tweetsDF.to_csv(outputFilePath, mode='a', index=False, header=False)
+    #with writeLock:
+    #    tweetsDF.to_csv(outputFilePath, mode='a', index=False, header=False)
     
     # Record the number of tweets we grabbed
     with threadLock:

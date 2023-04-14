@@ -362,9 +362,9 @@ def scraperManager():
             # Check if that thread got a 429 response
             if stillToManyRequests:
                 setStillToManyRequests(False)
-                scraperManagerStatus = "I'm waiting for 5m"
+                scraperManagerStatus = "I'm waiting for 1m"
                 # Clear the flag and wait for five minutes, decrease the rate
-                time.sleep(60 * 5)
+                time.sleep(60 * 1)
                 #if desiredRate > 75:
                 #    desiredRate -= 1
             else:

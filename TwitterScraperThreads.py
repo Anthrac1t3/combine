@@ -277,7 +277,7 @@ def scrapeTweets(prompt):
                 print(f"{thread.name} {str(e)}", file=sys.stderr)
             return
         # If we hit ten tweets then flush the list to our output file to save what we have and to avoid using to much memory
-        if len(tweetList) >= 10:
+        if len(tweetList) >= 3:
             # Write the tweet list to the output file
             writeTweetListToFile(outputFilePath, tweetList)
             
@@ -304,8 +304,8 @@ def rateAdjuster():
             setRate += 1
         elif tweetScrappingRate >= (desiredRate + 1) and setRate > 1:
             setRate -= 1
-
-    time.sleep(5)
+        
+        time.sleep(5)
 
     return
 

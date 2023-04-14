@@ -300,7 +300,7 @@ def scrapeTweets(prompt):
             return
         '''
         # If we hit ten tweets then flush the list to our output file to save what we have and to avoid using to much memory
-        if len(tweetList) >= 10:
+        if len(tweetList) >= 1:
             # Write the tweet list to the output file
             writeTweetListToFile(outputFilePath, tweetList)
             
@@ -323,7 +323,7 @@ def rateAdjuster():
         elapsedTime = time.time() - startTime
         tweetScrappingRate = totalTweetsScraped / elapsedTime
 
-        if tweetScrappingRate <= (desiredRate - 1) and tweetScrappingRate > 0 and setRate < 200:
+        if tweetScrappingRate <= (desiredRate - 1) and tweetScrappingRate > 0 and setRate < (desiredRate + 15):
             setRate += 1
         elif tweetScrappingRate >= (desiredRate + 1) and setRate > 1:
             setRate -= 1
@@ -382,11 +382,11 @@ def scraperManager():
 
             # Check if that thread got a 429 response
             if stillToManyRequests:
-                scraperManagerStatus = "I'm waiting for 10m"
+                scraperManagerStatus = "I'm waiting for 5m"
                 # Clear the flag and wait for five minutes, decrease the rate
-                time.sleep(60 * 10)
+                time.sleep(60 * 5)
                 if desiredRate > 70:
-                    desiredRate -= 5
+                    desiredRate -= 1
                 setStillToManyRequests(False)
             else:
                 setToManyRequests(False)
@@ -416,9 +416,7 @@ def displayManager():
         
         # Determine status of the program
         if toManyRequests:
-            status = "429 error received, slowing down"
-        elif stillToManyRequests:
-            status = "Rate limited by Twitter, sleeping for 10m"
+            status = "429 error received"
         else:
             status = "Nominal"
 
@@ -468,9 +466,6 @@ def displayManager():
 ### MAIN BODY ###
 
 
-# Start the performance timer
-startTime = time.time()
-
 if not os.path.exists('logs'):
     os.makedirs('logs')
 
@@ -509,6 +504,9 @@ with open(logFilePath, 'w') as logFile:
         scraperThread.name = "WorkerThread:" + str(i)
         scraperThread.start()
         workersSpawned += 1
+
+    # Start the performance timer
+    startTime = time.time()
 
     # Create and start the thread that will be coordinating all of the scraper threads
     managerThread = threading.Thread(target=scraperManager, args=())

@@ -151,16 +151,11 @@ def writeTweetListToFile(outputFilePath, tweetList):
 
     with writeLock:
         with open(outputFilePath, 'a', encoding='UTF8', newline='') as file:
-            for tweet in tweetList:
-                file.write(tweet)
+            writer = csv.writer(file)
 
-    # Turn the tweet list into a data frame
-    #tweetsDF = pd.DataFrame(tweetList, columns=['time_stamp', 'tweet_id', 'content', 'author'])
-    
-    # Insert the data frame into out csv file
-    #with writeLock:
-    #    tweetsDF.to_csv(outputFilePath, mode='a', index=False, header=False)
-    
+            for tweet in tweetList:
+                writer.writerow(tweet)
+
     # Record the number of tweets we grabbed
     with threadLock:
         totalTweetsWritten += len(tweetList)
@@ -281,7 +276,7 @@ def scrapeTweets(prompt):
                 print(f"{thread.name} {str(e)}", file=sys.stderr)
             return
         # If we hit ten tweets then flush the list to our output file to save what we have and to avoid using to much memory
-        if len(tweetList) >= 5:
+        if len(tweetList) >= 10:
             # Write the tweet list to the output file
             writeTweetListToFile(outputFilePath, tweetList)
             
@@ -356,7 +351,7 @@ def scraperManager():
             scraperManagerStatus = "I'm Sending out one thread"
             with waitBlock:
                 waitBlock.notify(1)
-            time.sleep(15)
+            time.sleep(5)
             # Wait for that thread to finish
             if workersWaiting != workersAlive:
                 while workersWaiting != workersAlive:

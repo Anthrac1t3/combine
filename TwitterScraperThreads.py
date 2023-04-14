@@ -1,16 +1,15 @@
-from multiprocessing.connection import wait
+import contextlib
+import datetime as dt
+import os
+import re
+import sys
+import threading
+import time
+from random import *
+
 import pandas as pd
 import snscrape.modules.twitter as sntwitter
 from snscrape.base import ScraperException
-import datetime as dt
-import contextlib
-import time
-import threading
-import re
-import os
-import sys
-from random import *
-
 
 ### GLOBAL DATA STORES ###
 
@@ -41,19 +40,26 @@ global scraperManagerStatus
 scraperManagerStatus = "Nothing"
 global rateManagerStatus
 rateManagerStatus = "Nothing"
-global semaphoreOffset
-semaphoreOffset = 0
+#global semaphoreOffset
+#semaphoreOffset = 0
+
+# Boolean to keep track of if we need to stop running any threads
+global threadsStop
+threadsStop = False
+
+# Two booleans to keep track of our 429 status
+global toManyRequests
+toManyRequests = False
+global stillToManyRequests
+stillToManyRequests = False
 
 # A lock for manipulating the global variables
 threadLock = threading.Lock()
 # A lock exclusively for writing to the output file
 writeLock = threading.Lock()
-threadsStop = threading.Event()
+
 waitBlock = threading.Condition()
-rateSemaphore = threading.Semaphore(50)
-# Two threading events to keep track of our 429 status
-toManyRequests = threading.Event()
-stillToManyRequests = threading.Event()
+#rateSemaphore = threading.Semaphore(500)
 
 
 # TODO should be moved to JSON file
@@ -66,7 +72,7 @@ desiredRate = 100
 global tweetNum
 tweetNum = 100
 # Start date in Y/M/D format
-startDate = [2013, 1, 1]
+startDate = [2023, 1, 1]
 # Words or phrases to search for
 searchPhrases = ['vacation', 'outing', 'travel', 'alone', 'loneliness']
 #searchPhrases = ['depressed', 'stressed', 'happy', 'sad', 'joyful']
@@ -152,7 +158,7 @@ def generatePromptList(phrases, dateList):
 
 
 def scrapeTweets(prompt):
-    global workersAlive, workersWaiting, totalTweetsScraped, tweetsExpected
+    global workersAlive, workersWaiting, totalTweetsScraped, tweetsExpected, toManyRequests, stillToManyRequests
 
     # Let the manager know you're alive
     with threadLock: 
@@ -181,58 +187,58 @@ def scrapeTweets(prompt):
         with waitBlock:
             waitBlock.wait()
         # Wait till it's this threads turn in the queue
-        with rateSemaphore:
-            workersWaitingDecrement()
-            # Attempt to scrape the next tweet from Twitter and handle any exception that may occur
-            try:
-                # Also redirect stderr just for this call because it is so dang noisy 
-                with contextlib.redirect_stderr(None):
-                    # Grab the next tweet from the iterator
-                    # This can throw a ScraperException for a few reasons
-                    tweet = next(scrapedTweets)
+        #with rateSemaphore:
+        workersWaitingDecrement()
+        # Attempt to scrape the next tweet from Twitter and handle any exception that may occur
+        try:
+            # Also redirect stderr just for this call because it is so dang noisy 
+            #with contextlib.redirect_stderr(None):
+                # Grab the next tweet from the iterator
+                # This can throw a ScraperException for a few reasons
+            tweet = next(scrapedTweets)
 
-                # Append the tweet we scraped to our running list of them
-                tweetList.append([tweet.date, tweet.id, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
-                # Increment our tweet count so we can see if we return or not later
-                localTweetsScraped += 1
-                # Update the counter for how many tweets we have pulled from Twitter and stored in memory
-                with threadLock:
-                    totalTweetsScraped += 1
+            # Append the tweet we scraped to our running list of them
+            tweetList.append([tweet.date, tweet.id, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
+            # Increment our tweet count so we can see if we return or not later
+            localTweetsScraped += 1
+            # Update the counter for how many tweets we have pulled from Twitter and stored in memory
+            with threadLock:
+                totalTweetsScraped += 1
 
-            except ScraperException as se:
-                regexPattern = r"4 requests to .* failed, giving up\."
-                # If a ScraperException is raised usually because of a 429 error
-                if re.search(regexPattern, str(se)):
-                    # If this thread was released to see if the 429 error is gone then report back if it is or not
-                    if toManyRequests.is_set():
-                        stillToManyRequests.set()
-                    toManyRequests.set()
-                    continue
-                # If it was anything besides the 429 error there are other issue and we must exit
-                else:
-                    with threadLock:
-                        workersAlive -= 1
-                    with writeLock:
-                        print(f"{thread.name} {str(se)}", file=sys.stderr)
-                    return
-            # This exception will be raised if the iterator has nothing else to give. We've exhausted related tweets for that time period
-            except StopIteration as e:
-                with threadLock:
-                    tweetsExpected = tweetsExpected - (tweetNum - localTweetsScraped)
-                writeTweetListToFile(outputFilePath, tweetList)
-                with writeLock:
-                    print(f"{thread.name} {prompt}\nExited early with {localTweetsScraped}/{tweetNum} tweets", file=sys.stderr)
-                with threadLock:
-                    workersAlive -= 1
-                return
-            # Any other exception gets caught here
-            except BaseException as e:
+        except ScraperException as se:
+            regexPattern = r"4 requests to .* failed, giving up\."
+            # If a ScraperException is raised usually because of a 429 error
+            if re.search(regexPattern, str(se)):
+                # If this thread was released to see if the 429 error is gone then report back if it is or not
+                if toManyRequests:
+                    stillToManyRequests = True
+                toManyRequests = True
+                continue
+            # If it was anything besides the 429 error there are other issue and we must exit
+            else:
                 with threadLock:
                     workersAlive -= 1
                 with writeLock:
-                    print(f"{thread.name} {str(e)}", file=sys.stderr)
+                    print(f"{thread.name} {str(se)}", file=sys.stderr)
                 return
-            
+        # This exception will be raised if the iterator has nothing else to give. We've exhausted related tweets for that time period
+        except StopIteration as e:
+            with threadLock:
+                tweetsExpected = tweetsExpected - (tweetNum - localTweetsScraped)
+            writeTweetListToFile(outputFilePath, tweetList)
+            with writeLock:
+                print(f"{thread.name} {prompt}\nExited early with {localTweetsScraped}/{tweetNum} tweets", file=sys.stderr)
+            with threadLock:
+                workersAlive -= 1
+            return
+        # Any other exception gets caught here
+        except BaseException as e:
+            with threadLock:
+                workersAlive -= 1
+            with writeLock:
+                print(f"{thread.name} {str(e)}", file=sys.stderr)
+            return
+        
         # If we hit ten tweets then flush the list to our output file to save what we have and to avoid using to much memory
         if len(tweetList) >= 10:
             # Write the tweet list to the output file
@@ -246,13 +252,16 @@ def scrapeTweets(prompt):
     return
 
 
+'''
 def semaphoreManager():
     global semaphoreOffset
-
+    
+    time.sleep(55)
+    
     while workersAlive > 0:
         time.sleep(5)
 
-        while threadsStop.is_set():
+        while threadsStop:
             time.sleep(1)
 
         elapsedTime = time.time() - startTime
@@ -264,6 +273,8 @@ def semaphoreManager():
             semaphoreOffset += 1
 
     return
+'''
+
 
 #TODO Rate manager dosen't report it's status
 def rateManager():
@@ -272,7 +283,7 @@ def rateManager():
     setRate = desiredRate
 
     while workersAlive > 0:
-        while threadsStop.is_set():
+        while threadsStop:
             time.sleep(1)
 
         elapsedTime = time.time() - startTime
@@ -281,7 +292,7 @@ def rateManager():
         with waitBlock:
             waitBlock.notify()
 
-        if tweetScrappingRate <= (desiredRate - 1) and tweetScrappingRate > 0 and setRate < (desiredRate + 50):
+        if tweetScrappingRate <= (desiredRate - 1) and tweetScrappingRate > 0 and setRate < (desiredRate + 150):
             setRate += 1
         elif tweetScrappingRate >= (desiredRate + 1):
             setRate += 1
@@ -292,18 +303,15 @@ def rateManager():
 
 
 def scraperManager():
-    global desiredRate, scraperManagerStatus
-
-    toManyRequests.clear()
-    stillToManyRequests.clear()
+    global desiredRate, scraperManagerStatus, threadsStop, toManyRequests, stillToManyRequests
 
     while workersAlive > 0:
         scraperManagerStatus = "I'm Running"
 
         # Run this if a thread has signaled we received a 429 response
-        if toManyRequests.is_set():
+        if toManyRequests:
             # Call all worker threads to stop
-            threadsStop.clear()
+            threadsStop = True
 
             # Check if there are any threads actively running
             if workersWaiting != workersAlive:
@@ -313,7 +321,7 @@ def scraperManager():
                     time.sleep(1)
 
         # Fall into this loop until we stop receiving 429 responses
-        while toManyRequests.is_set():
+        while toManyRequests:
             # Notify a single thread to start in order to see if it still gets a 429 response
             scraperManagerStatus = "I'm Sending out one thread"
             with waitBlock:
@@ -324,19 +332,19 @@ def scraperManager():
                     time.sleep(1)
 
             # Check if that thread got a 429 response
-            if stillToManyRequests.is_set():
+            if stillToManyRequests:
                 scraperManagerStatus = "I'm waiting for 5m"
                 # Clear the flag and wait for five minutes, decrease the rate
                 time.sleep(60 * 5)
                 if desiredRate > 70:
                     desiredRate -= 5
-                stillToManyRequests.clear()
+                stillToManyRequests = False
             else:
-                toManyRequests.clear()
+                toManyRequests = False
 
         # ThreadsStop is set then that means we just got done taking care of 429 errors and we can now clear it
-        if threadsStop.is_set():
-            threadsStop.clear()
+        if threadsStop:
+            threadsStop = False
 
     scraperManagerStatus = "I exited"
 
@@ -354,9 +362,9 @@ def displayManager():
         os.system('cls' if os.name == 'nt' else 'clear')
 
         # Print status updates
-        if toManyRequests.is_set():
+        if toManyRequests:
             print("Status: 429 error received, slowing down")
-        elif stillToManyRequests.is_set():
+        elif stillToManyRequests:
             print("Status: Rate limited by Twitter, sleeping for 5m")
         else:
             print("Status: Nominal")
@@ -387,7 +395,7 @@ def displayManager():
             print(
                 f"Estimated time till done: {(tweetNum-(totalTweetsScraped/workersAlive))/tweetScrappingRate*workersAlive/60}m")
         print(f"Set rate/Desired rate: {setRate}/{desiredRate}")
-        print(f"Semaphores avalible: {50 + semaphoreOffset}")
+        #print(f"Semaphores avalible: {500 + semaphoreOffset}")
         print(f"Current/Desired scraping rate: {tweetScrappingRate}tps/{desiredRate}tps")
 
         time.sleep(1)
@@ -444,9 +452,9 @@ with open(logFilePath, 'w') as logFile:
     rateManagerThread.start()
 
     # Create and start the thread that will be adjusting the amount of semaphores
-    semaphoreManagerThread = threading.Thread(target=semaphoreManager, args=())
-    semaphoreManagerThread.name = "SemaphoreManagerThread"
-    semaphoreManagerThread.start()
+    #semaphoreManagerThread = threading.Thread(target=semaphoreManager, args=())
+    #semaphoreManagerThread.name = "SemaphoreManagerThread"
+    #semaphoreManagerThread.start()
 
     # Create and start the thread that will be running the data display
     displayThread = threading.Thread(target=displayManager)
@@ -459,7 +467,7 @@ with open(logFilePath, 'w') as logFile:
 
     managerThread.join()
     rateManagerThread.join()
-    semaphoreManagerThread.join()
+    #semaphoreManagerThread.join()
     displayThread.join()
 
     # Performance monitoring stuff

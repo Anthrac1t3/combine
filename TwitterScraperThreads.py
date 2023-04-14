@@ -62,7 +62,7 @@ stillToManyRequests = threading.Event()
 
 # The number of tweet we want to pull for each prompt and period
 global desiredRate
-desiredRate = 150
+desiredRate = 100
 global tweetNum
 tweetNum = 100
 # Start date in Y/M/D format
@@ -186,10 +186,10 @@ def scrapeTweets(prompt):
             # Attempt to scrape the next tweet from Twitter and handle any exception that may occur
             try:
                 # Also redirect stderr just for this call because it is so dang noisy 
-                #with contextlib.redirect_stderr(None):
+                with contextlib.redirect_stderr(None):
                     # Grab the next tweet from the iterator
                     # This can throw a ScraperException for a few reasons
-                tweet = next(scrapedTweets)
+                    tweet = next(scrapedTweets)
 
                 # Append the tweet we scraped to our running list of them
                 tweetList.append([tweet.date, tweet.id, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
@@ -225,6 +225,14 @@ def scrapeTweets(prompt):
                 with threadLock:
                     workersAlive -= 1
                 return
+            # Any other exception gets caught here
+            except BaseException as e:
+                with threadLock:
+                    workersAlive -= 1
+                with writeLock:
+                    print(f"{thread.name} {str(e)}", file=sys.stderr)
+                return
+            
         # If we hit ten tweets then flush the list to our output file to save what we have and to avoid using to much memory
         if len(tweetList) >= 10:
             # Write the tweet list to the output file
@@ -257,7 +265,7 @@ def semaphoreManager():
 
     return
 
-
+#TODO Rate manager dosen't report it's status
 def rateManager():
     global setRate, rateManagerStatus
     

@@ -3,8 +3,9 @@
 	"tweetNum": 100,
 	"startDate": [2013, 1, 1],
 	"searchPhrases": ["vacation", "outing", "travel", "alone", "loneliness", "depressed", "stressed", "happy", "sad", "joyful", "blissful", "food", "snack", "board"],
-	"_searchPhrases": ["depressed", "stressed", "happy", "sad", "joyful"],
-	"__searchPhrases": ["blissful", "food", "snack", "board"],
+	"__searchPhrases": ["depressed", "stressed", "happy", "sad", "joyful"],
+	"___searchPhrases": ["blissful", "food", "snack", "board"],
+	"_searchPhrases": ["blissful"],
 
 	"subredditList":[
 		"food", "FoodPorn", "Cooking", 

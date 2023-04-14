@@ -56,6 +56,7 @@ stillToManyRequests = False
 
 # A lock for manipulating the global variables
 threadLock = threading.Lock()
+flagLock = threading.Lock()
 # A lock exclusively for writing to the output file
 writeLock = threading.Lock()
 # A block that threads can wait on until the rate manager tells them to go
@@ -115,14 +116,14 @@ def workersWaitingDecrement():
 def setToManyRequests(value):
     global toManyRequests
     
-    with threadLock:
+    with flagLock:
         toManyRequests = value
 
 
 def setStillToManyRequests(value):
     global stillToManyRequests
     
-    with threadLock:
+    with flagLock:
         stillToManyRequests = value
 
 
@@ -226,7 +227,7 @@ def scrapeTweets(prompt):
     while localTweetsScraped <= tweetNum:
         workersWaitingIncrement()
         # See if there is a connection available to take
-        scraperSemaphore.acquire(blocking=True)
+        #scraperSemaphore.acquire(blocking=True)
         # Wait until the scraperThread manager tells the scraperThread to go
         with waitBlock:
             waitBlock.wait()
@@ -235,13 +236,15 @@ def scrapeTweets(prompt):
         # Attempt to scrape the next tweet from Twitter and handle any exception that may occur
         try:
             # Also redirect stderr just for this call because it is so dang noisy 
-            with contextlib.redirect_stderr(None):
+            #with contextlib.redirect_stderr(None):
                 # Grab the next tweet from the iterator
                 # This can throw a ScraperException for a few reasons
-                tweet = next(scrapedTweets)
+            tweet = next(scrapedTweets)
+
+            setToManyRequests(False)
 
             #Release the connection back to the pool
-            scraperSemaphore.release()
+            #scraperSemaphore.release()
 
             # Append the tweet we scraped to our running list of them
             tweetList.append([tweet.date, tweet.id, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
@@ -252,14 +255,14 @@ def scrapeTweets(prompt):
                 totalTweetsScraped += 1
 
         except ScraperException as se:
-            scraperSemaphore.release()
+            #scraperSemaphore.release()
             if toManyRequests:
                 setStillToManyRequests(True)
             else:
                 setToManyRequests(True)
             continue
         except StopIteration as si:
-            scraperSemaphore.release()
+            #scraperSemaphore.release()
             if toManyRequests:
                 setStillToManyRequests(True)
             else:
@@ -271,36 +274,8 @@ def scrapeTweets(prompt):
             with writeLock:
                 print(f"{thread.name} {str(e)}", file=sys.stderr)
             return
-        '''
-        except ScraperException as se:
-            regexPattern = r"4 requests to .* failed, giving up\."
-            # If a ScraperException is raised usually because of a 429 error
-            if re.search(regexPattern, str(se)):
-                # If this thread was released to see if the 429 error is gone then report back if it is or not
-                if toManyRequests:
-                    stillToManyRequests = True
-                toManyRequests = True
-                continue
-            # If it was anything besides the 429 error there are other issue and we must exit
-            else:
-                workersAliveDecrement()
-                with writeLock:
-                    print(f"{thread.name} {str(se)}", file=sys.stderr)
-                return
-        # A scrape will just randomly throw this error for no reason and I can't pin down why
-        '''
-        '''
-        except StopIteration as e:
-            with threadLock:
-                tweetsExpected = tweetsExpected - (tweetNum - localTweetsScraped)
-            writeTweetListToFile(outputFilePath, tweetList)
-            with writeLock:
-                print(f"{thread.name} {prompt}\nExited early with {localTweetsScraped}/{tweetNum} tweets", file=sys.stderr)
-            workersAliveDecrement()
-            return
-        '''
         # If we hit ten tweets then flush the list to our output file to save what we have and to avoid using to much memory
-        if len(tweetList) >= 1:
+        if len(tweetList) >= 5:
             # Write the tweet list to the output file
             writeTweetListToFile(outputFilePath, tweetList)
             
@@ -373,9 +348,9 @@ def scraperManager():
         while toManyRequests:
             # Notify a single thread to start in order to see if it still gets a 429 response
             scraperManagerStatus = "I'm Sending out one thread"
-            setStillToManyRequests(False)
             with waitBlock:
-                waitBlock.notify()
+                waitBlock.notify(1)
+            time.sleep(15)
             # Wait for that thread to finish
             if workersWaiting != workersAlive:
                 while workersWaiting != workersAlive:
@@ -383,20 +358,18 @@ def scraperManager():
 
             # Check if that thread got a 429 response
             if stillToManyRequests:
+                setStillToManyRequests(False)
                 scraperManagerStatus = "I'm waiting for 5m"
                 # Clear the flag and wait for five minutes, decrease the rate
                 time.sleep(60 * 5)
                 if desiredRate > 70:
                     desiredRate -= 1
-                setStillToManyRequests(False)
             else:
                 setToManyRequests(False)
 
         # ThreadsStop is set then that means we just got done taking care of 429 errors and we can now clear it
         if threadsStop:
             threadsStop = False
-        
-        time.sleep(1)
 
     scraperManagerStatus = "I exited"
 
@@ -414,12 +387,16 @@ def displayManager():
         # Calculate our display variables
         elapsedTime = time.time() - startTime
         tweetScrappingRate = totalTweetsScraped / elapsedTime
-        
-        # Determine status of the program
+
+        # Determine status of our two booleans
         if toManyRequests:
-            status = "429 error received"
+            toManyRequestsStatus = "Set"
         else:
-            status = "Nominal"
+            toManyRequestsStatus = "Cleared"
+        if stillToManyRequests:
+            stillToManyRequestsStatus = "Set"
+        else:
+            stillToManyRequestsStatus = "Cleared"
 
         # Calculate block completion
         if workersAlive <= 0:
@@ -439,7 +416,9 @@ def displayManager():
         os.system('cls' if os.name == 'nt' else 'clear')
 
         # Print status updates
-        print(f"Status: {status}")
+        print(f"toManyRequests status: {toManyRequestsStatus}")
+
+        print(f"stillToManyRequests status: {stillToManyRequestsStatus}")
 
         print(f"Scraper manager status: {scraperManagerStatus}")
 

@@ -242,7 +242,8 @@ def scrapeTweets(prompt):
                 # This can throw a ScraperException for a few reasons
                 tweet = next(scrapedTweets)
 
-            setToManyRequests(False)
+            if setToManyRequests:
+                setToManyRequests(False)
 
             #Release the connection back to the pool
             #scraperSemaphore.release()

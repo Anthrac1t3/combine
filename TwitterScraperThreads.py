@@ -328,7 +328,7 @@ def rateAdjuster():
         elif tweetScrappingRate >= (desiredRate + 1) and setRate > 1:
             setRate -= 1
 
-    time.sleep(0.1)
+    time.sleep(1)
 
     return
 

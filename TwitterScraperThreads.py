@@ -236,10 +236,10 @@ def scrapeTweets(prompt):
         # Attempt to scrape the next tweet from Twitter and handle any exception that may occur
         try:
             # Also redirect stderr just for this call because it is so dang noisy 
-            #with contextlib.redirect_stderr(None):
+            with contextlib.redirect_stderr(None):
                 # Grab the next tweet from the iterator
                 # This can throw a ScraperException for a few reasons
-            tweet = next(scrapedTweets)
+                tweet = next(scrapedTweets)
 
             setToManyRequests(False)
 

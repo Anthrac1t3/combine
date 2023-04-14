@@ -4,5 +4,12 @@
 	"startDate": [2013, 1, 1],
 	"searchPhrases": ["vacation", "outing", "travel", "alone", "loneliness"],
 	"_searchPhrases": ["depressed", "stressed", "happy", "sad", "joyful"],
-	"__searchPhrases": ["blissful", "food", "snack", "board"]
+	"__searchPhrases": ["blissful", "food", "snack", "board"],
+
+	"subredditList":[
+		"food", "FoodPorn", "Cooking", 
+		"fastfood", "EatCheapAndHealthy", "TastyFood", 
+		"MealPrepSunday", "CheapMeals", "slowcooking",
+		"fromscratch", "snacks", "candy"
+	]
 }

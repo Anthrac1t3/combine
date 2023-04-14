@@ -373,6 +373,7 @@ def scraperManager():
         while toManyRequests:
             # Notify a single thread to start in order to see if it still gets a 429 response
             scraperManagerStatus = "I'm Sending out one thread"
+            setStillToManyRequests(False)
             with waitBlock:
                 waitBlock.notify()
             # Wait for that thread to finish

@@ -1,7 +1,7 @@
 # combine
 A multithreading wrapper and general abstracter for snscrape
 
-Only TwitterScraperThreads works at the moment
+Only TwitterScraper and TwitterScraperThreads works at the moment
 
 run with "py .\TwitterScraperThreads.py" on Windows or "python3 TwitterScraperThreads.py" on BASH
 

@@ -278,6 +278,8 @@ def scrapeTweets(prompt):
             return
         # If we hit ten tweets then flush the list to our output file to save what we have and to avoid using to much memory
         if len(tweetList) >= 3:
+            #TODO Maybe just have it flush to a list and have another thread who's 
+            #TODOcont job it is to just write as fast as possible
             # Write the tweet list to the output file
             writeTweetListToFile(outputFilePath, tweetList)
             

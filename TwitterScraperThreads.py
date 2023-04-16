@@ -222,7 +222,7 @@ def scrapeTweets(prompt):
     outputFilePath = os.path.join('results', outputFile)
 
     # Create a tweet iterator
-    scrapedTweets = sntwitter.TwitterSearchScraper(prompt).get_items()
+    tweetScraper = sntwitter.TwitterSearchScraper(prompt).get_items()
 
     # Run until we have collected the required amount of tweets
     while localTweetsScraped <= tweetNum:
@@ -240,7 +240,7 @@ def scrapeTweets(prompt):
             with contextlib.redirect_stderr(None):
                 # Grab the next tweet from the iterator
                 # This can throw a ScraperException for a few reasons
-                tweet = next(scrapedTweets)
+                tweet = next(tweetScraper)
 
             if setToManyRequests:
                 setToManyRequests(False)

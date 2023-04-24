@@ -56,9 +56,9 @@ dateList = generateDateList(2013, 1, 1)
 tweetNum = 1000
 
 # Set the keywords we are going to be using
-keyWords = ["depressed", "loneliness", "vacation"]
-#keyWords = ["blissful", "outing", "travel", "snack"]
-#keyWords = ["happy", "sad", "joyful", "food"]
+keyWords = ["alone", "depressed", "loneliness", "vacation"]
+#keyWords = ["stressed", "blissful", "outing", "travel", "snack"]
+#keyWords = ["bored", "happy", "sad", "joyful", "food"]
 
 #TODO handle 404 error
 

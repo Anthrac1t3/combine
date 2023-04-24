@@ -94,6 +94,7 @@ def setThreadStatus(threadID, status):
     
     with threadLock:
         workerTable.update({threadID:status})
+        
 
 
 #TODO handle start date being null

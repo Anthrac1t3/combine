@@ -1,6 +1,12 @@
 # Project spcific
 logs/
 results/
+upload/
+
+*.zip
+*.old
+
+prompts.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

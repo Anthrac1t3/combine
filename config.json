@@ -1,5 +1,4 @@
 {
-	"desiredRate": 80,
 	"tweetNum": 100,
 	"startDate": [2013, 1, 1],
 	"searchPhrases": ["vacation", "depressed", "stressed", "blissful"],
@@ -8,7 +7,7 @@
 	"___searchPhrases": ["food", "snack", "board"],
 
 	"subredditList":[
-		"food", "FoodPorn", "Cooking", 
+		"food", "Cooking", 
 		"fastfood", "EatCheapAndHealthy", "TastyFood", 
 		"MealPrepSunday", "CheapMeals", "slowcooking",
 		"fromscratch", "snacks", "candy"

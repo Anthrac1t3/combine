@@ -1,12 +1,13 @@
-import pandas as pd
 import snscrape.modules.twitter as sntwitter
+from snscrape.base import ScraperException
 import datetime as dt
 import time
+import csv
+import os
 
 ### FUNCTION CREATION ###
 
 def generateDateList(startYear, startMonth, startDay):
-    startTime = time.time()
     # Define the starting date
     startDate = dt.datetime(startYear, startMonth, startDay)
 
@@ -14,72 +15,92 @@ def generateDateList(startYear, startMonth, startDay):
     endDate = dt.datetime.now()
 
     # Define the time delta of one week
-    delta = dt.timedelta(weeks=1)
+    delta = dt.timedelta(days=1)
 
     # Generate a list of dates one week apart
     dateList = []
     while startDate <= endDate:
         dateList.append(startDate)
         startDate += delta
-    endTime = time.time()
-    elapsedTime = endTime - startTime
-    print(f"Generated date list in: {elapsedTime}s")
     return dateList
 
-def generatePromptList(dateList):
-    startTime = time.time()
-    #Creating a prompt list to store all out twitter search terms
+def generatePromptList(word, dateList):
+    # Creating a prompt list to store all out twitter search terms
     promptList = []
 
-    for i, date in enumerate(dateList):
-        #Check if we are at the end of the list or not so that we don't get an index out of bounds error
-        if i == len(dateList)-1:
+    for j, date in enumerate(dateList):
+        # Check if we are at the end of the list or not so that we don't get an index out of bounds error
+        if j == len(dateList)-1:
             break
-        #Construct the prompt in out desired format
-        prompt = "food since:" + date.strftime("%Y-%m-%d") + " until:" + dateList[i+1].strftime("%Y-%m-%d")
-        #Append it to the list
+        # Construct the prompt in out desired format
+        prompt = word + " since:" + \
+            date.strftime("%Y-%m-%d") + " until:" + \
+            dateList[j+1].strftime("%Y-%m-%d")
+        # Append it to the list
         promptList.append(prompt)
-    endTime = time.time()
-    elapsedTime = endTime - startTime
-    print(f"Generated prompt list in: {elapsedTime}s")
+
     return promptList
 
 ### BEGIN MAIN BODY ###
 totalTweets = 0
 totalTime = 0
 
+# Create the results folder if it's not already there
+if not os.path.exists('results'):
+    os.makedirs('results')
+
 #generateDateList("Starting year", "Starting month", "Starting day")
-dateList = generateDateList(2023, 1, 1)
+dateList = generateDateList(2013, 1, 1)
 
 #set the number of tweets we want to scrape for each period of time
-tweetNum = 10
+tweetNum = 1000
 
-# Generate our prompt list from the date list
-promptList = generatePromptList(dateList)
+# Set the keywords we are going to be using
+keyWords = ["depressed", "loneliness", "vacation"]
+#keyWords = ["blissful", "outing", "travel", "snack"]
+#keyWords = ["happy", "sad", "joyful", "food"]
 
-# Creating list to append tweet data to
-tweets_list = []
+#TODO handle 404 error
 
-print(f"Number of prompts:{len(promptList)} Expected number of tweets:{len(promptList) * tweetNum}")
+for word in keyWords:
+    # Generate our prompt list from the date list
+    promptList = generatePromptList(word, dateList)
 
-for j in range(len(promptList)):
-    startTime = time.time()
-    # Using TwitterSearchScraper to scrape data and append tweets to list
-    for i, tweet in enumerate(sntwitter.TwitterSearchScraper(promptList[j]).get_items()):
-        if i == tweetNum:
-            break
-        tweets_list.append([tweet.date, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
+    print(f"Number of prompts:{len(promptList)} Expected number of tweets:{len(promptList) * tweetNum}")
 
-    # Creating a dataframe from the tweets list above
-    tweets_df = pd.DataFrame(tweets_list, columns=['Datetime', 'Text', 'Username'])
+    outputFile = word + ".csv"
+    outputFilePath = os.path.join('results', outputFile)
 
-    with open('tweets.csv', 'w', encoding='utf-8-sig') as file:
-        tweets_df.to_csv(file)
+    with open(outputFilePath, 'a', encoding='UTF8', newline='') as file:
+        writer = csv.writer(file)
 
-    endTime = time.time()
-    elapsedTime = endTime - startTime
-    totalTime = totalTime + elapsedTime
-    totalTweets = totalTweets + tweetNum
-    print(f"Pulled {tweetNum} tweets for prompt {promptList[j]} in: {elapsedTime}s")
+        for prompt in promptList:
+            startTime = time.time()
+
+            # Creating list to append tweet data to
+            tweetList = []
+
+            tweetScraper = sntwitter.TwitterSearchScraper(prompt).get_items()
+
+            # Using TwitterSearchScraper to scrape data and append tweets to list
+            while len(tweetList) < tweetNum:
+                try:
+                    tweet = next(tweetScraper)
+
+                    tweetList.append([tweet.date, tweet.id, tweet.rawContent.replace('\n', ' ').replace('\r', '').strip(), tweet.user.username])
+                # Catch any scraper exceptions
+                except ScraperException as se:
+                    print("Caught ScraperException. Sleeping for 5 min then retrying")
+                    time.sleep(60 * 5)
+                
+            # Flush the tweet list to the file
+            for tweet in tweetList:
+                writer.writerow(tweet)
+
+            endTime = time.time()
+            elapsedTime = endTime - startTime
+            totalTime = totalTime + elapsedTime
+            totalTweets = totalTweets + tweetNum
+            print(f"Pulled {tweetNum} tweets for prompt {prompt} in: {elapsedTime}s")
 
 print(f"\nPulled a total of {totalTweets} in {totalTime/60}m for an average of {totalTweets/totalTime}t/s")

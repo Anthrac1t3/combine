@@ -48,7 +48,7 @@ workerTable = {}
 global tweetNum
 tweetNum = 1000
 
-workerNum = 5
+workerNum = 3
 
 # The date to start scraping from in year, month, day format
 startDate = [2013, 1, 1]
@@ -94,7 +94,7 @@ def setThreadStatus(threadID, status):
     
     with threadLock:
         workerTable.update({threadID:status})
-        
+
 
 
 #TODO handle start date being null
@@ -243,6 +243,7 @@ def runDisplay():
 
         if promptCount <= 0:
             return
+        
 
         time.sleep(1)
 

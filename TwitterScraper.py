@@ -50,13 +50,13 @@ if not os.path.exists('results'):
     os.makedirs('results')
 
 #generateDateList("Starting year", "Starting month", "Starting day")
-dateList = generateDateList(2013, 1, 1)
+dateList = generateDateList(2020, 1, 1)
 
 #set the number of tweets we want to scrape for each period of time
-tweetNum = 1000
+tweetNum = 100
 
 # Set the keywords we are going to be using
-keyWords = ["alone", "depressed", "loneliness", "vacation"]
+keyWords = ["depressed", "loneliness", "vacation"]
 #keyWords = ["stressed", "blissful", "outing", "travel", "snack"]
 #keyWords = ["bored", "happy", "sad", "joyful", "food"]
 
